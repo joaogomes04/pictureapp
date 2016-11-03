@@ -51,7 +51,6 @@ import org.hisp.dhis.android.sdk.persistence.preferences.ResourceType;
 import org.hisp.dhis.android.sdk.utils.api.ProgramType;
 
 import java.util.Calendar;
-import java.util.Date;
 import java.util.List;
 
 /**
@@ -60,7 +59,7 @@ import java.util.List;
  */
 public class PullController {
     public static final int MAX_EVENTS_X_ORGUNIT_PROGRAM = 4800;
-    public static final int NUMBER_OF_MONTHS=0;
+    public static final int NUMBER_OF_MONTHS=6;
     private final String TAG = ".PullController";
 
     private static PullController instance;
@@ -126,70 +125,31 @@ public class PullController {
             //Enabling resources to pull
             enableMetaDataFlags();
             //Delete previous metadata
-
-            Log.d(TAG,"Delete sdk db");
-            PopulateDB.wipeSDKData();
-            //Pull new metadata
-            postProgress(context.getString(R.string.progress_pull_downloading));
-            PreferencesState.getInstance().reloadPreferences();
-
+            TrackerController.setMaxEvents(MAX_EVENTS_X_ORGUNIT_PROGRAM);
+            if(NUMBER_OF_MONTHS>0) {
+                Calendar month = Calendar.getInstance();
+                month.add(Calendar.MONTH, -NUMBER_OF_MONTHS);
+                TrackerController.setStartDate(EventExtended.format(month.getTime(), EventExtended.AMERICAN_DATE_FORMAT));
+            }
             MetaDataController.clearMetaDataLoadedFlags();
             MetaDataController.wipe();
+            //Fixme delete the events
+            Log.d(TAG,"Delete sdk db");
+            PopulateDB.wipeSDKData();
 
-            TrackerController.setMaxEvents(MAX_EVENTS_X_ORGUNIT_PROGRAM);
-            String selectedDateLimit=PreferencesState.getInstance().getDataLimitedByDate();
-            //Pull No data is selected
-
-            //Limit of data by date is selected
-            if(!selectedDateLimit.equals("")) {
-                TrackerController.setStartDate(EventExtended.format(realDateFromString(selectedDateLimit), EventExtended.AMERICAN_DATE_FORMAT));
-            }
-
-            if(selectedDateLimit.equals(PreferencesState.getInstance().getContext().getString(R.string.no_data))) {
-                pullMetaData();
-            }else{
-                pullComplete();
+            //Pull new metadata
+            postProgress(context.getString(R.string.progress_pull_downloading));
+            try {
+                job = DhisService.loadData(context);
+            } catch (Exception ex) {
+                Log.e(TAG, "pullS: " + ex.getLocalizedMessage());
+                ex.printStackTrace();
             }
         } catch (Exception ex) {
             Log.e(TAG, "pull: " + ex.getLocalizedMessage());
             unregister();
             postException(ex);
         }
-    }
-
-    private void pullMetaData() {
-        try {
-            job = DhisService.loadMetaData(context);
-        } catch (Exception ex) {
-            Log.e(TAG, "pullS: " + ex.getLocalizedMessage());
-            postException(ex);
-        }
-    }
-
-    private void pullComplete() {
-        try {
-            job = DhisService.loadData(context);
-        } catch (Exception ex) {
-            Log.e(TAG, "pullS: " + ex.getLocalizedMessage());
-            ex.printStackTrace();
-            return;
-        }
-    }
-
-    /**
-     * Returns the correct data from the limited date in shared preferences
-     * @param selectedDateLimit
-     */
-    private Date realDateFromString(String selectedDateLimit) {
-        Calendar day = Calendar.getInstance();
-        if(selectedDateLimit.equals(PreferencesState.getInstance().getContext().getString(R.string.last_6_days))){
-                day.add(Calendar.DAY_OF_YEAR, -6);
-        } else if(selectedDateLimit.equals(PreferencesState.getInstance().getContext().getString(R.string.last_6_weeks))){
-            day.add(Calendar.WEEK_OF_YEAR, -6);
-        }else if(selectedDateLimit.equals(PreferencesState.getInstance().getContext().getString(R.string.last_6_months))){
-            day.add(Calendar.MONTH, -6);
-        }
-        return day.getTime();
     }
 
     /**
@@ -371,7 +331,7 @@ public class PullController {
 
     //Returns true if the pull thead is finish
     public boolean finishPullJob() {
-        if (job!=null && JobExecutor.isJobRunning(job.getJobId())) {
+        if (JobExecutor.isJobRunning(job.getJobId())) {
             Log.d(TAG, "Job " + job.getJobId() + " is running");
             job.cancel(true);
             try {
